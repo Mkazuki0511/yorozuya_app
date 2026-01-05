@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "676850899690",
+    "project_id": "yorozuya-app",
+    "storage_bucket": "yorozuya-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:676850899690:android:9265dd772d248fcba3d593",
+        "android_client_info": {
+          "package_name": "com.example.yorozuya_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEJKlA25OWDgsGLYRa-VMpb7Im1gIrmM8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

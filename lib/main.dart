@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:yorozuya_app/start/lobby.dart';
 import 'firebase_options.dart';
 import 'pages/page_search.dart';
 import 'pages/page_request.dart';
@@ -29,7 +30,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF7F7F7),
       ),
-      home: const MainNavigationScreen(),
+      home: const PageLobby(),
     );
   }
 }

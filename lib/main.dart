@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:yorozuya_app/start/lobby.dart';
 import 'firebase_options.dart';
 import 'pages/page_search.dart';
@@ -30,7 +32,24 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF7F7F7),
       ),
-      home: const PageLobby(),
+
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(), // ログイン状態を監視
+        builder: (context, snapshot) {
+          // 通信中のぐるぐる表示
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+
+          // ユーザーデータがあれば（ログイン済みなら）メイン画面へ
+          if (snapshot.hasData) {
+            return const MainNavigationScreen();
+          }
+
+          // データがなければ（未ログインなら）ロビー画面へ
+          return const PageLobby();
+        },
+      ),
     );
   }
 }

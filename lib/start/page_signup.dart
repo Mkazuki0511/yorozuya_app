@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'page_onboarding_step1.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -18,41 +19,65 @@ class _PageSignupState extends State<PageSignup> {
 
   // 新規登録ロジック
   Future<void> _handleSignUp() async {
-    // 1. 入力チェック
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty || _nameController.text.isEmpty) {
+    // --- 1. 入力バリデーション ---
+    // trim() を使うことで、スペースのみの入力も防ぎます
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('すべての項目を入力してください')),
+        const SnackBar(
+          content: Text('すべての項目を正しく入力してください'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return; // ここで処理を中断
+    }
+
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('パスワードは6文字以上で入力してください')),
       );
       return;
     }
 
+    // --- 2. 登録処理の開始 ---
     setState(() => _isLoading = true);
 
     try {
-      // 2. Firebase Authでユーザー作成
-      final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text.trim(),
+      // Firebase Auth でユーザー作成
+      final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
       );
 
-      // 3. Firestoreにユーザー情報を保存
-      await FirebaseFirestore.instance.collection('users').doc(credential.user!.uid).set({
-        'uid': credential.user!.uid,
-        'nickname': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
+      // Firestore にユーザー基本情報を保存
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'uid': userCredential.user!.uid,
+        'nickname': name,
+        'email': email,
         'createdAt': FieldValue.serverTimestamp(),
+        'onboardingCompleted': false, // オンボーディングが終わったかどうかのフラグ
       });
 
+      // --- 3. 画面遷移 ---
+      // 全ての非同期処理（await）が正常に終わった場合のみ実行されます
       if (mounted) {
-        Navigator.pop(context); // 登録成功後、前の画面へ戻る
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const PageOnboardingStep1()),
+        );
       }
     } on FirebaseAuthException catch (e) {
-      // エラーハンドリング
+      // Firebaseのエラー（既にメアドが使われている等）を表示
       String message = 'エラーが発生しました';
-      if (e.code == 'weak-password') message = 'パスワードが短すぎます';
       if (e.code == 'email-already-in-use') message = 'このメールアドレスは既に登録されています';
+      if (e.code == 'invalid-email') message = 'メールアドレスの形式が正しくありません';
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      print(e); // 予期せぬエラーのログ
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

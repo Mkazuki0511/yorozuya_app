@@ -1,10 +1,11 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart'; // kIsWeb のため
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../main.dart'; //
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import '../main.dart';
 
 class PageOnboardingStep4 extends StatefulWidget {
   const PageOnboardingStep4({super.key});
@@ -14,7 +15,7 @@ class PageOnboardingStep4 extends StatefulWidget {
 }
 
 class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
-  File? _image;
+  Uint8List? _imageBytes; // ウェブとネイティブ両対応のためバイト配列で持つ
   final _picker = ImagePicker();
   bool _isLoading = false;
 
@@ -22,10 +23,25 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
   Future<void> _pickImage() async {
     final pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 50,
+      imageQuality: 80, // 少し品質を上げておく（後で圧縮するため）
     );
+
     if (pickedFile != null) {
-      setState(() => _image = File(pickedFile.path));
+      final bytes = await pickedFile.readAsBytes();
+
+      // 画像の回転問題を解決しつつ圧縮
+      // ウェブでは flutter_image_compress_web が自動的に処理を試みる
+      final compressedBytes = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: 800,
+        minHeight: 800,
+        quality: 70,
+        rotate: 0, // EXIF情報に基づいて自動回転される
+      );
+
+      setState(() {
+        _imageBytes = compressedBytes;
+      });
     }
   }
 
@@ -39,32 +55,40 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
       String? downloadUrl;
 
       // 画像が選択されている場合のみStorageにアップロード
-      if (_image != null) {
+      if (_imageBytes != null) {
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('user_icons')
             .child('${user.uid}.jpg');
-        await storageRef.putFile(_image!);
+
+        // ウェブでも動くように putData を使用
+        final metadata = SettableMetadata(contentType: 'image/jpeg');
+        await storageRef.putData(_imageBytes!, metadata);
         downloadUrl = await storageRef.getDownloadURL();
       }
 
       // Firestoreの情報を更新
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-        'profileImageUrl': downloadUrl,
-        'onboardingStep': 4,
-        'onboardingCompleted': true,
-      });
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'profileImageUrl': downloadUrl,
+            'onboardingStep': 4,
+            'onboardingCompleted': true,
+          });
 
       if (mounted) {
         // メイン画面へ遷移（戻れないようにする）
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-              (route) => false,
+          (route) => false,
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラー: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('エラー: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -111,6 +135,8 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
             child: GestureDetector(
               onTap: _pickImage,
               child: Stack(
+                clipBehavior:
+                    Clip.none, // これを追加することで、枠外（マイナス指定）のバッジが表示されるようになります
                 children: [
                   Container(
                     width: 200, // サイズを少し調整
@@ -124,23 +150,23 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
                           color: Colors.black.withOpacity(0.1),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
-                        )
+                        ),
                       ],
                       // 画像があれば表示
-                      image: _image != null
+                      image: _imageBytes != null
                           ? DecorationImage(
-                        image: FileImage(_image!),
-                        fit: BoxFit.cover, // 正方形にきれいに収める
-                      )
+                              image: MemoryImage(_imageBytes!),
+                              fit: BoxFit.cover, // 正方形にきれいに収める
+                            )
                           : null,
                     ),
                     // 画像がない時は「＋」アイコンを表示
-                    child: _image == null
+                    child: _imageBytes == null
                         ? const Icon(Icons.add, size: 60, color: Colors.cyan)
                         : null,
                   ),
                   // 画像がある時の「編集」バッジ
-                  if (_image != null)
+                  if (_imageBytes != null)
                     Positioned(
                       right: -10,
                       bottom: -10,
@@ -150,7 +176,11 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
                           color: Colors.cyan,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.edit, color: Colors.white, size: 24),
+                        child: const Icon(
+                          Icons.edit,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                 ],
@@ -162,7 +192,10 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
 
           // --- ボタンセクション ---
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 40.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 32.0,
+              vertical: 40.0,
+            ),
             child: Column(
               children: [
                 SizedBox(
@@ -180,17 +213,29 @@ class _PageOnboardingStep4State extends State<PageOnboardingStep4> {
                     onPressed: _isLoading ? null : _uploadAndFinish,
                     child: _isLoading
                         ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    )
-                        : const Text('はじめる', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'はじめる',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: _isLoading ? null : _uploadAndFinish,
-                  child: const Text('あとで設定する', style: TextStyle(color: Colors.grey)),
+                  child: const Text(
+                    'あとで設定する',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ),
               ],
             ),
